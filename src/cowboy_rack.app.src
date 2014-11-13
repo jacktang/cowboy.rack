@@ -1,0 +1,11 @@
+{application, cowboy_rack,
+ [
+  {description, "Cowboy rack adapter"},
+  {vsn, "1.0.0"},
+  {registered, []},
+  {applications, [ kernel,
+                   stdlib
+                 ]},
+  {mod, { cowboy_rack, []}},
+  {env, []}
+ ]}.
