@@ -52,15 +52,15 @@ handle(Req, {path, Path}) when is_list(Path) ->
 
   
 handle(Req, {path, Path}) when is_binary(Path) ->  
-    {RequestMethod, Req1} = cowboy_req:method(Req),
-    {ScriptName, Req2} = cowboy_req:path(Req1),
-    {_PathInfo, Req3} = cowboy_req:path_info(Req2),
-    {QueryString, Req4} = cowboy_req:qs(Req3),
-    {ServerName, Req5} = cowboy_req:host(Req4),
-    {ServerPort, Req6} = cowboy_req:port(Req5),
-    {RequestHeaders, _} = cowboy_req:headers(Req6),
-    {ok, Body, Req7} = case RequestMethod of
-                           <<"POST">> -> cowboy_req:body(Req6);
+    RequestMethod = cowboy_req:method(Req),
+    ScriptName = cowboy_req:path(Req),
+    _PathInfo = cowboy_req:path_info(Req),
+    QueryString = cowboy_req:qs(Req),
+    ServerName = cowboy_req:host(Req),
+    ServerPort = cowboy_req:port(Req),
+    RequestHeaders = cowboy_req:headers(Req),
+    {ok, Body, _} = case RequestMethod of
+                           <<"POST">> -> cowboy_req:body(Req);
                            _ -> {ok, <<"">>, Req6}
                        end,
     
