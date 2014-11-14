@@ -30,7 +30,8 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    % supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    application_utils:start_supervisor(?MODULE, cowboy_rack_sup, []).
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -49,20 +50,16 @@ start_link() ->
 %%                     {error, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init([cowboy_rack_sup]) ->
+    CRWSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_worker_sup, []),
+    application_utils:one4one_supervisor([CRWSup]).
+
+init(_Args) ->
     RestartStrategy = one_for_one,
     MaxRestarts = 1000,
     MaxSecondsBetweenRestarts = 3600,
 
     SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-
-    Restart = permanent,
-    Shutdown = 2000,
-    Type = worker,
-
-    AChild = {'AName', {'AModule', start_link, []},
-              Restart, Shutdown, Type, ['AModule']},
-
     {ok, {SupFlags, []}}.
 
 %%%===================================================================
