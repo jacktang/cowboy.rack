@@ -17,6 +17,7 @@
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
+-define(APP, cowboy_rack).
 
 %%%===================================================================
 %%% API functions
@@ -51,8 +52,9 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([cowboy_rack_sup]) ->
-    CRWSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_worker_sup, []),
-    application_utils:one4one_supervisor([CRWSup]).
+    RackEnv = application:get_env(?APP, rack_env, []),
+    CRWSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_worker_sup, [RackEnv]),
+    application_utils:one4one_supervisor([CRWSup]);
 
 init(_Args) ->
     RestartStrategy = one_for_one,

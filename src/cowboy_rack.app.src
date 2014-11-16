@@ -7,5 +7,5 @@
                    stdlib
                  ]},
   {mod, { cowboy_rack, []}},
-  {env, []}
+  {env, [ {rack_env, []} ]}
  ]}.
