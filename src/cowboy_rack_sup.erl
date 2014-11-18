@@ -56,13 +56,19 @@ init([cowboy_rack_sup]) ->
     CRWSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_worker_sup, [RackEnv]),
     application_utils:one4one_supervisor([CRWSup]);
 
-init(_Args) ->
-    RestartStrategy = one_for_one,
-    MaxRestarts = 1000,
-    MaxSecondsBetweenRestarts = 3600,
+init([cowboy_rack_worker_sup, RackEnv]) ->
+    RackWoker = application_utils:dynamic_child_spec(cowboy_rack_worker, [RackEnv]),
+    application_utils:one4one_supervisor(simple, RackWoker).
 
-    SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-    {ok, {SupFlags, []}}.
+
+
+% init(_Args) ->
+%     RestartStrategy = one_for_one,
+%     MaxRestarts = 1000,
+%     MaxSecondsBetweenRestarts = 3600,
+
+%     SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
+%     {ok, {SupFlags, []}}.
 
 %%%===================================================================
 %%% Internal functions

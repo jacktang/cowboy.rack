@@ -6,6 +6,6 @@
   {applications, [ kernel,
                    stdlib
                  ]},
-  {mod, { cowboy_rack, []}},
+  {mod, { cowboy_rack_app, []}},
   {env, [ {rack_env, []} ]}
  ]}.
