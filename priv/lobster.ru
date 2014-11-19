@@ -1,5 +1,5 @@
-require '/home/dev/Work/cowboy_rack/priv/lobster'
-require '/home/dev/Work/cowboy_rack/priv/cowboy_rack'
+require 'lobster'
+require 'cowboy_rack'
 
 use Rack::Lint
 use Rack::ShowExceptions

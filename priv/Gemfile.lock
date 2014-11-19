@@ -1,0 +1,14 @@
+GEM
+  remote: http://ruby.taobao.org/
+  specs:
+    beambridge (0.9.0)
+    erlectricity (1.1.1)
+    rack (1.5.2)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  beambridge
+  erlectricity
+  rack

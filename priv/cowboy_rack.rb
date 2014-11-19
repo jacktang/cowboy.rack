@@ -4,6 +4,9 @@ if File.exists?("Gemfile")
   Bundler.setup
 end
 
+Dir.chdir(ARGV[0])
+
+
 require 'erlectricity'
 require 'stringio'
 

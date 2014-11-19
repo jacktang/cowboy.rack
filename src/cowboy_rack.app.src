@@ -7,5 +7,7 @@
                    stdlib
                  ]},
   {mod, { cowboy_rack_app, []}},
-  {env, [ {rack_env, []} ]}
+  {env, [ {rack_env,   []},
+          {rails_path, "./"},
+          {ru_file,    "lobster.rb"} ]}
  ]}.
