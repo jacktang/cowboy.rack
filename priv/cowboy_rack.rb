@@ -3,10 +3,8 @@ if File.exists?("Gemfile")
   require 'bundler'
   Bundler.setup
 end
-
-Dir.chdir(ARGV[0])
-
-
+# Dir.chdir(ARGV[0])
+Dir.chdir(ARGV[0][0, ARGV[0].index("/config.ru")])
 require 'erlectricity'
 require 'stringio'
 require 'rack'
@@ -16,15 +14,15 @@ module Rack
 
       def self.run(app, options={})
         receive do |f|
-          f.when(:env, Object) do |env|
-            env = env.inject({}){|env_hash, kv| env_hash[kv[0]] = kv[1].to_s; env_hash } 
-              # body_len = INPUT.read(4).unpack("N")[0]
-              # INPUT = IO.new(3)
-              # rack_input = StringIO.new(INPUT.read(body_len))
-              # rack_input.set_encoding(Encoding::BINARY) if rack_input.respond_to?(:set_encoding)
-
+          f.when([:env, Array]) do |headers|
+            env = {}
+            headers.each do |header|
+              env[header[0]] = header[1]
+            end
+            rack_input = StringIO.new(headers.to_s) 
+            rack_input.set_encoding(Encoding::BINARY) if rack_input.respond_to?(:set_encoding)
             env.update({"rack.version" => Rack::VERSION,
-               # "rack.input" => rack_input,
+               "rack.input" => rack_input,
                "rack.errors" => $stderr,
                "rack.multithread" => false,
                "rack.multiprocess" => false,
@@ -32,12 +30,13 @@ module Rack
                "rack.url_scheme" => ["yes", "on", "1"].include?(ENV["HTTPS"]) ? "https" : "http"
              })
             status, headers, body = app.call(env)
-            # f.send!(:response, env.inspect)
-            f.send!(:response, [
+     
+            f.send!([:response, [
+              
               [:status, status], 
               [:headers, headers.to_a], 
               [:body, build_body(body)]
-            ])
+            ]])
             exit
             # f.receive_loop
           end
