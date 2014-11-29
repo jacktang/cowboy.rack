@@ -53,13 +53,19 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([cowboy_rack_sup]) ->
     RackEnv = application:get_env(?APP, rack_env, []),
+    WorkerPoolNum = application:get_env(?APP, worker_pool_num, 20),
     CRWSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_worker_sup, [RackEnv]),
+    CRRPSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_req_pool_sup, [WorkerPoolNum]),
+
     application_utils:one4one_supervisor([CRWSup]);
 
 init([cowboy_rack_worker_sup, RackEnv]) ->
     RackWoker = application_utils:dynamic_child_spec(cowboy_rack_worker, [RackEnv]),
     application_utils:one4one_supervisor(simple, RackWoker).
 
+init([cowboy_rack_req_pool_sup, WorkerPoolNum]) ->
+    ReqPool = application_utils:child_spec(cowboy_rack_req_pool, [WorkerPoolNum]),
+    application_utils:one4one_supervisor(ReqPool).
 
 
 % init(_Args) ->

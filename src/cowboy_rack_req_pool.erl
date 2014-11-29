@@ -6,12 +6,13 @@
 %%% @end
 %%% Created : 14 Nov 2014 by Jack Tang <himars@gmail.com>
 %%%-------------------------------------------------------------------
--module(cowboy_rack_worker).
+-module(cowboy_rack_req_pool).
 
 -behaviour(gen_server).
 
 %% API
 -export([start/1]).
+-export([request/3]).
 -export([start_link/2]).
 
 %% gen_server callbacks
@@ -22,28 +23,23 @@
          terminate/2,
          code_change/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
+-define(APP, cowboy_rack). 
 
--record(state, {port, rack_env, path, options, from}).
+-record(state, {worker_pool_num, queue}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
 
-start(Path) ->
-    case supervisor:start_child(cowboy_rack_worker_sup, [Path]) of
-        {ok, Pid}           -> {ok, Pid};
-        {ok, Pid, _Info}    -> {ok, Pid};
-        {error, {already_started, Pid}} -> {ok, Pid};
-        {error, Reason}     -> {error, Reason}
-    end.
+%%--------------------------------------------------------------------
+% start() ->
+%     case supervisor:start_child(cowboy_rack_req_pool_sup, []) of
+%         {ok, Pid}           -> {ok, Pid};
+%         {ok, Pid, _Info}    -> {ok, Pid};
+%         {error, {already_started, Pid}} -> {ok, Pid};
+%         {error, Reason}     -> {error, Reason}
+%     end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -52,8 +48,9 @@ start(Path) ->
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(RackEnv, Path) ->
-    gen_server:start_link(?MODULE, [RackEnv, Path], []).
+start_link(WorkerPoolNum) ->
+	gen_server:start_link(?MODULE, ?MODULE, [WorkerPoolNum], []).
+
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -70,9 +67,9 @@ start_link(RackEnv, Path) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([RackEnv, Path]) ->
-    gen_server:cast(self(), launch_worker),
-    {ok, #state{rack_env = RackEnv, path = Path}}.
+init(WorkerPoolNum) ->
+  gen_server:cast(self(), {spawn, WorkerPoolNum}),
+	{ok, #state{queue = queue:new(),worker_pool_num = WorkerPoolNum}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -87,8 +84,7 @@ init([RackEnv, Path]) ->
 %%                                   {stop, Reason, Reply, State} |
 %%                                   {stop, Reason, State}
 %% @end
-%%--------------------------------------------------------------------
-
+  %--------------------------------------------------------------------
 
 handle_call(_Request, _From, State) ->
     lager:error("Can't handle request: ~p", [_Request]),
@@ -104,34 +100,38 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(launch_worker, #state{rack_env = RackEnv, path = Path} = State) ->
-    WorkerPath = code:lib_dir(cowboy_rack, priv),
-    Cmd = WorkerPath ++ "/worker.rb " ++ binary_to_list(Path),
-    lager:debug("Launch command: ~p", [Cmd]),
-    Port =               erlang:open_port({spawn, Cmd}, [ nouse_stdio,
-                                               binary,
-                                           exit_status,
-                                           {packet,4},
-                                           {env, RackEnv}
-                                           ]),
-    % Cmd = "rackup " ++ binary_to_list(Path) ++ "/config.ru",
-    % Port = open_port({spawn, Cmd}, [{packet, 4},
-    %                                 nouse_stdio,
-    %                                 exit_status,
-    %                                 binary%,
-    %                                 %{env, RackEnv}
-    %                                 ]), 
-    {noreply, State#state{port = Port}};
 
-
-handle_call({request, From, Headers, Body}, #state{port = Port} = State) ->
-    Packed = iolist_to_binary(
-               [<<(length(Headers)):32>>,
-                [<<(size(Key)):32,Key/binary,(size(Value)):32,Value/binary>> || {Key, Value} <- Headers],
-                <<(size(Body)):32>>, Body]),
-    port_command(Port, Packed),
-    {noreply, State#state{from = From}};
-
+handle_cast({spawn, WorkerPoolNum}, State) ->
+    pg2:create(cowboy_rack_req_pg),
+    lists:foreach(fun(_N) ->
+           {ok, Pid} = supervisor:start_child(cowboy_rack_worker_sup, []),
+           pg2:join(cowboy_rack_req_pg, Pid)
+          end, lists:seq(1, WorkerPoolNum)
+          ),
+    {noreply, State};
+handle_cast({request, From, Headers, Body}, #state{queue = RequestQueue} = State) ->
+    gen_server:cast(self(), standby),    
+    {noreply, State#queue{queue = queue:in({From, Headers, Body}, RequestQueue)}}};
+handle_cast({release_pid, Pid}, State) ->
+    pg2:join(cowboy_rack_req_pg, Pid),
+    gen_server:cast(self(), standby),
+    {noreply, State};
+handle_cast(standby, #state{queue = RequestQueue} = State) ->
+    case length(pg2:get_members(cowboy_rack_req_pg)) of
+        Len when Len =:= 0 ->
+          {noreply, State};
+        _ ->
+            Pid = pg2:get_closest_pid(cowboy_rack_req_pg),
+            pg2:leave(cowboy_rack_req_pg, Pid),
+            case queue:out(RequestQueue) of
+                {{value, Request}, RequestQueue2} -> 
+                    {From, Headers, Body} = Request,
+                    gen_server:cast(Pid, {request, From, Headers, Body}). 
+                    {noreply, State#state{queue = RequestQueue2}};
+                {empty, Requests} ->
+                    {noreply, State}
+            end 
+    end;        
 
 handle_cast(_Msg, State) ->
     lager:error("Can't handle msg: ~p", [_Msg]),
@@ -147,19 +147,6 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({Port, {data, Bin}}, #state{from = From} = State) ->
-     #state{port = Port, path = Path, from = From} = State,
-    <<Status:32, HeadersCount:32, Rest/binary>> = Bin,
-    {Headers, BodyType, RawBody} = extract_headers(Rest, HeadersCount, []),
-    Body = case BodyType of
-               file ->
-                   {ok, B} = file:read_file(binary_to_list(RawBody)),
-                   B;
-               raw -> RawBody
-           end,
-    From ! {reply, {ok, {Status, Headers, Body}}},
-    gen_server:cast(cowboy_rack_req_pool, release_pid),       
-    {noreply, State};
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -192,13 +179,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-extract_headers(<<BodyFlag, BodyLen:32, Body:BodyLen/binary>>, 0, Acc) ->
-    BodyType = case BodyFlag of
-                   1 -> file;
-                   0 -> raw
-               end,
-    {lists:reverse(Acc), BodyType, Body};
-
-extract_headers(<<KeyLen:32, Key:KeyLen/binary, ValueLen:32, Value:ValueLen/binary, Rest/binary>>,
-                HeadersCount, Acc) ->
-  extract_headers(Rest, HeadersCount - 1, [ {Key, Value} | Acc]).

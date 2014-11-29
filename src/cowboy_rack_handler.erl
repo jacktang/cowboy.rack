@@ -9,7 +9,7 @@
 -module(cowboy_rack_handler).
 
 %% API
--export([init/2, terminate/3]).
+-export([init/2, terminate/3, info/3]).
 
 %%%===================================================================
 %%% API
@@ -21,12 +21,19 @@
 %% @end
 %%--------------------------------------------------------------------
 init(Req, Opt) ->
-    Req2 = handle(Req, {options, Opt}),
-    {ok, Req2, Opt}.
+    TimeOut = proplists:get_value(time_out, Opt, 5000),
+    handle(Req, {options, Opt}),
+    {cowboy_loop, Req, Opt, TimeOut, hibernate}.
 
+info({reply, Body}, Req, State) ->
+    Req2 = cowboy_req:reply(200, [], Body, Req),
+    {stop, Req2, State};
+info(_Msg, Req, State) ->
+    {ok, Req, State, hibernate}.
 
 terminate(_Reason, _Req, _State) ->
   ok.
+
 
 %%%===================================================================
 %%% Internal functions
@@ -52,7 +59,7 @@ handle(Req, {path, Path}) when is_list(Path) ->
   handle(Req, {path, list_to_binary(Path)});
 
   
-handle(Req, {path, Path}) when is_binary(Path) ->  
+handle(Req, {path, Path}) when is_binary(Path) ->
     RequestMethod = cowboy_req:method(Req),
     ScriptName = cowboy_req:path(Req),
     % _PathInfo = cowboy_req:path_info(Req),
@@ -64,8 +71,6 @@ handle(Req, {path, Path}) when is_binary(Path) ->
                         <<"POST">> -> cowboy_req:body(Req);
                         _ -> {ok, <<"">>, Req}
                     end,
-    
-    % Trying to follow http://rack.rubyforge.org/doc/SPEC.html here 
     RackSession = [
                    {<<"REQUEST_METHOD">>, RequestMethod},
                    {<<"SCRIPT_NAME">>, <<"">>}, 
@@ -75,22 +80,7 @@ handle(Req, {path, Path}) when is_binary(Path) ->
                    {<<"SERVER_PORT">>, list_to_binary(integer_to_list(ServerPort))},
                    {<<"HTTP_HOST">>, <<ServerName/binary, ":", (list_to_binary(integer_to_list(ServerPort)))/binary>>}
                   ] ++ translate_headers(RequestHeaders),
-  
-    % io:format("************************~nRACK:~n~p~n************************~n", [RackSession]),
-    io:format("~n================~nREQUEST:~n==================Path:~n~p~nSession:~n~p~nBody:~n~p~n~n~n~n~n",
-              [Path, RackSession, Body]),
-
-    case cowboy_rack_worker:request(Path, RackSession, Body) of
-        {ok, {_Status, _ReplyHeaders, _ReplyBody} = Reply} ->
-            % ?D({_Status, RequestMethod, join(PathInfo, <<"/">>), iolist_size(_ReplyBody)}),
-            {ok, Reply, Req};
-        {error, busy} ->
-            {ok, {503, [], <<"Backend overloaded\r\n">>}, Req};
-        {error, timeout} ->
-            {ok, {504, [], <<"Backend timeout\r\n">>}, Req};
-        {error, Error} ->
-            {ok, {500, [], iolist_to_binary(io_lib:format("Internal server error: ~p\r\n", [Error]))}, Req}
-    end.
+    gen_server:cast(cowboy_rack_req_pool, {request, self(), RackSession, Body}).            
 
 
 translate_headers(Headers) ->

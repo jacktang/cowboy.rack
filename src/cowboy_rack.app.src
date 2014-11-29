@@ -9,5 +9,7 @@
   {mod, { cowboy_rack_app, []}},
   {env, [ {rack_env,   []},
           {rails_path, "./"},
-          {ru_file,    "lobster.rb"} ]}
+          {ru_file,    "lobster.rb"},
+          {worker_pool_num, 20},
+          {req_timeout, 6000}  ]}
  ]}.
