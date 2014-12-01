@@ -153,6 +153,7 @@ handle_info({Port, {data, Bin}}, #state{from = From} = State) ->
            end,
     From ! {reply, {Status, Headers, Body}},
     pg2:join(cowboy_rack_req_pool, self()),
+    gen_server:cast(cowboy_rack_req_pool, standby),
     {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
