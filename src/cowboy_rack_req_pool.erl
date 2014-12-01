@@ -47,7 +47,8 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(WorkerPoolNum) ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, WorkerPoolNum, []).
+  gen_server:start_link({local, ?MODULE}, ?MODULE, [WorkerPoolNum], []).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -63,8 +64,8 @@ start_link(WorkerPoolNum) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(WorkerPoolNum) ->
-  gen_server:cast(self(), {spawn, WorkerPoolNum}),
+init([WorkerPoolNum]) ->
+    gen_server:cast(self(), {spawn, WorkerPoolNum}),
   {ok, #state{queue = queue:new(), worker_pool_num = WorkerPoolNum}}.
 
 %%--------------------------------------------------------------------
@@ -80,9 +81,9 @@ init(WorkerPoolNum) ->
 %%                                   {stop, Reason, Reply, State} |
 %%                                   {stop, Reason, State}
 %% @end
-  %--------------------------------------------------------------------
-
+%%--------------------------------------------------------------------
 handle_call(_Request, _From, State) ->
+    lager:error("Can't handle request: ~p", [_Request]),
     {reply, {error, invalid_request}, State}.
 
 %%--------------------------------------------------------------------
@@ -95,40 +96,40 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-
 handle_cast({spawn, WorkerPoolNum}, State) ->
-    pg2:create(cowboy_rack_req_pg),
+    pg2:create(?MODULE),
     lists:foreach(fun(_N) ->
-           {ok, Pid} = supervisor:start_child(cowboy_rack_worker_sup, []),
-           pg2:join(cowboy_rack_req_pg, Pid)
-          end, lists:seq(1, WorkerPoolNum)
-          ),
+                    case cowboy_rack_worker:start() of
+                        {ok, Pid} ->
+                            pg2:join(?MODULE, Pid);
+                        _ ->
+                            lager:error("cowboy_rack_worker process create faild"),    
+                            faild
+                    end
+                   end, lists:seq(1, WorkerPoolNum)
+                 ),
     {noreply, State};
 handle_cast({request, From, Headers, Body}, #state{queue = RequestQueue} = State) ->
     gen_server:cast(self(), standby),
     {noreply, State#state{queue = queue:in({From, Headers, Body}, RequestQueue)}};
-handle_cast({release_pid, Pid}, State) ->
-    pg2:join(cowboy_rack_req_pg, Pid),
-    ok = gen_server:cast(self(), standby),
-    {noreply, State};
 handle_cast(standby, #state{queue = RequestQueue} = State) ->
-    case length(pg2:get_members(cowboy_rack_req_pg)) of
-        Len when Len =:= 0 ->
-          {noreply, State};
-        _ ->
+    case pg2:get_closest_pid(?MODULE) of
+        {error, _} ->
+            {noreply, State};
+        Pid ->
+            pg2:leave(?MODULE, Pid),
             case queue:out(RequestQueue) of
                 {{value, Request}, RequestQueue2} -> 
                     {From, Headers, Body} = Request,
-                    Pid = pg2:get_closest_pid(cowboy_rack_req_pg),
-                    pg2:leave(cowboy_rack_req_pg, Pid),
-                    gen_server:cast(Pid, {request, From, Headers, Body}), 
+                    gen_server:cast(Pid, {request, {From, Headers, Body}}), 
                     {noreply, State#state{queue = RequestQueue2}};
-                {empty, Requests} ->
+                {empty, _} ->
+                    pg2:join(?MODULE, Pid),
                     {noreply, State}
-            end 
+             end
     end;        
-
 handle_cast(_Msg, State) ->
+    lager:error("Can't handle msg: ~p", [_Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -141,7 +142,6 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-
 handle_info(_Info, State) ->
     {noreply, State}.
 

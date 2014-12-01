@@ -57,13 +57,10 @@ init([cowboy_rack_sup]) ->
     RailsPath = application:get_env(?APP, rails_path, []),
     CRWSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_worker_sup, [RackEnv, RailsPath]),
     CRRPSup = application_utils:supervisor_spec(?MODULE, cowboy_rack_req_pool_sup, [WorkerPoolNum]),
-
     application_utils:one4one_supervisor([CRWSup, CRRPSup]);
-
 init([cowboy_rack_worker_sup, RackEnv, RailsPath]) ->
     RackWoker = application_utils:dynamic_child_spec(cowboy_rack_worker, [RackEnv, list_to_binary(RailsPath)]),
     application_utils:one4one_supervisor(simple, RackWoker);
-
 init([cowboy_rack_req_pool_sup, WorkerPoolNum]) ->
     ReqPool = application_utils:child_spec(cowboy_rack_req_pool, [WorkerPoolNum]),
     application_utils:one4one_supervisor(ReqPool).

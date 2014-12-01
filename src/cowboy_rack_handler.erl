@@ -22,11 +22,10 @@
 %%--------------------------------------------------------------------
 init(Req, Opt) ->
     TimeOut = application:get_env(?APP, req_timeout, 5000),
-    handle(Req, {options, Opt}),
+    handle(Req),
     {cowboy_loop, Req, Opt, TimeOut, hibernate}.
 
 info({reply, Response}, Req, State) ->
-    % lager:info(Response),
     {Status, Headers, Body} = Response,
     Req2 = cowboy_req:reply(Status, Headers, Body, Req),
     {stop, Req2, State};
@@ -35,25 +34,10 @@ info(_Msg, Req, State) ->
 
 terminate(_Reason, _Req, _State) ->
   ok.
-
-
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-handle(Req, {options, Opt}) ->
-    Path = proplists:get_value(path, Opt, "./priv"),
-    case file:read_file_info(filename:join(Path, "config.ru")) of
-    {ok, _Info} ->
-        handle(Req, {path, Path});
-    {error, _} ->
-        unhandled
-  end;
-
-handle(Req, {path, Path}) when is_list(Path) ->
-  handle(Req, {path, list_to_binary(Path)});
-
-  
-handle(Req, {path, Path}) when is_binary(Path) ->
+handle(Req) ->
     RequestMethod = cowboy_req:method(Req),
     ScriptName = cowboy_req:path(Req),
     % _PathInfo = cowboy_req:path_info(Req),
@@ -65,7 +49,7 @@ handle(Req, {path, Path}) when is_binary(Path) ->
                         <<"POST">> -> cowboy_req:body(Req);
                         _ -> {ok, <<"">>, Req}
                     end,
-    RackSession = [
+    Headers = [
                    {<<"REQUEST_METHOD">>, RequestMethod},
                    {<<"SCRIPT_NAME">>, <<"">>}, 
                    {<<"PATH_INFO">>, ScriptName}, 
@@ -74,8 +58,7 @@ handle(Req, {path, Path}) when is_binary(Path) ->
                    {<<"SERVER_PORT">>, list_to_binary(integer_to_list(ServerPort))},
                    {<<"HTTP_HOST">>, <<ServerName/binary, ":", (list_to_binary(integer_to_list(ServerPort)))/binary>>}
                   ] ++ translate_headers(RequestHeaders),
-    gen_server:cast(cowboy_rack_req_pool, {request, self(), RackSession, Body}).            
-
+    gen_server:cast(cowboy_rack_req_pool, {request, self(), Headers, Body}).            
 
 translate_headers(Headers) ->
     lists:foldl(fun({'Host', _}, Acc) ->

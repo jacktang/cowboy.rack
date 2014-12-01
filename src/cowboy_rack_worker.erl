@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1]).
+-export([start/0]).
 -export([start_link/2]).
 
 %% gen_server callbacks
@@ -36,9 +36,8 @@
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-
-start(Path) ->
-    case supervisor:start_child(cowboy_rack_worker_sup, [Path]) of
+start() ->
+    case supervisor:start_child(cowboy_rack_worker_sup, []) of
         {ok, Pid}           -> {ok, Pid};
         {ok, Pid, _Info}    -> {ok, Pid};
         {error, {already_started, Pid}} -> {ok, Pid};
@@ -88,9 +87,8 @@ init([RackEnv, Path]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-
-
 handle_call(_Request, _From, State) ->
+    lager:error("Can't handle request: ~p", [_Request]),
     {reply, {error, invalid_request}, State}.
 
 %%--------------------------------------------------------------------
@@ -106,6 +104,7 @@ handle_call(_Request, _From, State) ->
 handle_cast(launch_worker, #state{rack_env = RackEnv, path = Path} = State) ->
     WorkerPath = code:lib_dir(cowboy_rack, priv),
     Cmd = WorkerPath ++ "/worker.rb " ++ binary_to_list(Path),
+    lager:debug("Launch command: ~p", [Cmd]),
     Port =               erlang:open_port({spawn, Cmd}, [ nouse_stdio,
                                                binary,
                                            exit_status,
@@ -120,18 +119,16 @@ handle_cast(launch_worker, #state{rack_env = RackEnv, path = Path} = State) ->
     %                                 %{env, RackEnv}
     %                                 ]), 
     {noreply, State#state{port = Port}};
-
-
-handle_cast({request, From, Headers, Body}, #state{port = Port} = State) ->
+handle_cast({request, Request}, #state{port = Port} = State) ->
+    {From, Headers, Body} = Request,
     Packed = iolist_to_binary(
                [<<(length(Headers)):32>>,
                 [<<(size(Key)):32,Key/binary,(size(Value)):32,Value/binary>> || {Key, Value} <- Headers],
                 <<(size(Body)):32>>, Body]),
     port_command(Port, Packed),
     {noreply, State#state{from = From}};
-
-
 handle_cast(_Msg, State) ->
+    lager:error("Can't handle msg: ~p", [_Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -155,9 +152,8 @@ handle_info({Port, {data, Bin}}, #state{from = From} = State) ->
                raw -> RawBody
            end,
     From ! {reply, {Status, Headers, Body}},
-    gen_server:cast(cowboy_rack_req_pool, {release_pid, self()}),       
+    pg2:join(cowboy_rack_req_pool, self()),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
