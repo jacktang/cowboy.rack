@@ -8,8 +8,8 @@
                  ]},
   {mod, { cowboy_rack_app, []}},
   {env, [ {rack_env,   []},
-          {rails_path, "./"},
+          {rails_path, "/home/dev/Work/ninja"},
           {ru_file,    "lobster.rb"},
-          {worker_pool_num, 20},
+          {worker_pool_num, 3},
           {req_timeout, 6000}  ]}
  ]}.

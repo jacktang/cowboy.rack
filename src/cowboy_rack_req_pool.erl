@@ -11,9 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1]).
--export([request/3]).
--export([start_link/2]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -49,9 +47,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(WorkerPoolNum) ->
-	gen_server:start_link(?MODULE, ?MODULE, [WorkerPoolNum], []).
-
-
+  gen_server:start_link({local, ?MODULE}, ?MODULE, WorkerPoolNum, []).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -69,7 +65,7 @@ start_link(WorkerPoolNum) ->
 %%--------------------------------------------------------------------
 init(WorkerPoolNum) ->
   gen_server:cast(self(), {spawn, WorkerPoolNum}),
-	{ok, #state{queue = queue:new(),worker_pool_num = WorkerPoolNum}}.
+  {ok, #state{queue = queue:new(), worker_pool_num = WorkerPoolNum}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -87,7 +83,6 @@ init(WorkerPoolNum) ->
   %--------------------------------------------------------------------
 
 handle_call(_Request, _From, State) ->
-    lager:error("Can't handle request: ~p", [_Request]),
     {reply, {error, invalid_request}, State}.
 
 %%--------------------------------------------------------------------
@@ -110,23 +105,23 @@ handle_cast({spawn, WorkerPoolNum}, State) ->
           ),
     {noreply, State};
 handle_cast({request, From, Headers, Body}, #state{queue = RequestQueue} = State) ->
-    gen_server:cast(self(), standby),    
-    {noreply, State#queue{queue = queue:in({From, Headers, Body}, RequestQueue)}}};
+    gen_server:cast(self(), standby),
+    {noreply, State#state{queue = queue:in({From, Headers, Body}, RequestQueue)}};
 handle_cast({release_pid, Pid}, State) ->
     pg2:join(cowboy_rack_req_pg, Pid),
-    gen_server:cast(self(), standby),
+    ok = gen_server:cast(self(), standby),
     {noreply, State};
 handle_cast(standby, #state{queue = RequestQueue} = State) ->
     case length(pg2:get_members(cowboy_rack_req_pg)) of
         Len when Len =:= 0 ->
           {noreply, State};
         _ ->
-            Pid = pg2:get_closest_pid(cowboy_rack_req_pg),
-            pg2:leave(cowboy_rack_req_pg, Pid),
             case queue:out(RequestQueue) of
                 {{value, Request}, RequestQueue2} -> 
                     {From, Headers, Body} = Request,
-                    gen_server:cast(Pid, {request, From, Headers, Body}). 
+                    Pid = pg2:get_closest_pid(cowboy_rack_req_pg),
+                    pg2:leave(cowboy_rack_req_pg, Pid),
+                    gen_server:cast(Pid, {request, From, Headers, Body}), 
                     {noreply, State#state{queue = RequestQueue2}};
                 {empty, Requests} ->
                     {noreply, State}
@@ -134,7 +129,6 @@ handle_cast(standby, #state{queue = RequestQueue} = State) ->
     end;        
 
 handle_cast(_Msg, State) ->
-    lager:error("Can't handle msg: ~p", [_Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

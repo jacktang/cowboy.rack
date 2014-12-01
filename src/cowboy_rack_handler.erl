@@ -7,7 +7,7 @@
 %%% Created : 14 Nov 2014 by Jack Tang <jack@taodi.local>
 %%%-------------------------------------------------------------------
 -module(cowboy_rack_handler).
-
+-define(APP, cowboy_rack). 
 %% API
 -export([init/2, terminate/3, info/3]).
 
@@ -21,12 +21,14 @@
 %% @end
 %%--------------------------------------------------------------------
 init(Req, Opt) ->
-    TimeOut = proplists:get_value(time_out, Opt, 5000),
+    TimeOut = application:get_env(?APP, req_timeout, 5000),
     handle(Req, {options, Opt}),
     {cowboy_loop, Req, Opt, TimeOut, hibernate}.
 
-info({reply, Body}, Req, State) ->
-    Req2 = cowboy_req:reply(200, [], Body, Req),
+info({reply, Response}, Req, State) ->
+    % lager:info(Response),
+    {Status, Headers, Body} = Response,
+    Req2 = cowboy_req:reply(Status, Headers, Body, Req),
     {stop, Req2, State};
 info(_Msg, Req, State) ->
     {ok, Req, State, hibernate}.
@@ -42,17 +44,9 @@ handle(Req, {options, Opt}) ->
     Path = proplists:get_value(path, Opt, "./priv"),
     case file:read_file_info(filename:join(Path, "config.ru")) of
     {ok, _Info} ->
-            {ok, {Status, ReplyHeaders, ReplyBody}, Req1} = handle(Req, {path, Path}),
-            case proplists:get_value(<<"X-Accel-Redirect">>, ReplyHeaders) of
-                undefined ->
-                    cowboy_req:reply(Status, ReplyHeaders, ReplyBody, Req1);
-                Redirect ->
-                    lager:debug("Rack redirect: ~p", [Redirect]),              
-                    %{unhandled, Req, lists:keystore(path, 1, Env, {path, Redirect})}
-                    unhandled
-            end;
-        {error, _} ->
-            unhandled
+        handle(Req, {path, Path});
+    {error, _} ->
+        unhandled
   end;
 
 handle(Req, {path, Path}) when is_list(Path) ->
