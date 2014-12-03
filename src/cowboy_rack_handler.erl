@@ -31,7 +31,9 @@ info({reply, Response}, Req, State) ->
     {stop, Req2, State};
 info(_Msg, Req, State) ->
     {ok, Req, State, hibernate}.
-
+terminate(timeout, _Req, _State) ->
+  gen_server:cast(cowboy_rack_req_pool, {delete_request, self()}),
+  ok; 
 terminate(_Reason, _Req, _State) ->
   ok.
 %%%===================================================================
@@ -58,6 +60,7 @@ handle(Req) ->
                    {<<"SERVER_PORT">>, list_to_binary(integer_to_list(ServerPort))},
                    {<<"HTTP_HOST">>, <<ServerName/binary, ":", (list_to_binary(integer_to_list(ServerPort)))/binary>>}
                   ] ++ translate_headers(RequestHeaders),
+    % io:format("~n================~nREQUEST:~n==================Session:~n~p~nBody:~n~p~n~n~n~n~n", [Headers, Body]),
     gen_server:cast(cowboy_rack_req_pool, {request, self(), Headers, Body}).            
 
 translate_headers(Headers) ->

@@ -66,7 +66,7 @@ start_link(WorkerPoolNum) ->
 %%--------------------------------------------------------------------
 init([WorkerPoolNum]) ->
     gen_server:cast(self(), {spawn, WorkerPoolNum}),
-  {ok, #state{queue = queue:new(), worker_pool_num = WorkerPoolNum}}.
+  {ok, #state{queue = [], worker_pool_num = WorkerPoolNum}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -109,25 +109,25 @@ handle_cast({spawn, WorkerPoolNum}, State) ->
                    end, lists:seq(1, WorkerPoolNum)
                  ),
     {noreply, State};
+handle_cast({delete_request, Pid}, #state{queue = RequestQueue} = State) ->
+    case tuple_list_utils:keyfind(Pid, RequestQueue) of
+        {Pid, undefined} ->
+            {noreply, State};
+        Request2 ->
+            RequestQueue2 = lists:delete(Request2, RequestQueue),
+            {noreply, State#state{queue = RequestQueue2}}
+    end;
 handle_cast({request, From, Headers, Body}, #state{queue = RequestQueue} = State) ->
     gen_server:cast(self(), standby),
-    {noreply, State#state{queue = queue:in({From, Headers, Body}, RequestQueue)}};
+    {noreply, State#state{queue = lists:append(RequestQueue, [{From, Headers, Body}])}};
 handle_cast(standby, #state{queue = RequestQueue} = State) ->
     case pg2:get_closest_pid(?MODULE) of
         {error, _} ->
             {noreply, State};
         Pid ->
             pg2:leave(?MODULE, Pid),
-            case queue:out(RequestQueue) of
-                {{value, Request}, RequestQueue2} -> 
-                    {From, Headers, Body} = Request,
-                    gen_server:cast(Pid, {request, {From, Headers, Body}}), 
-                    {noreply, State#state{queue = RequestQueue2}};
-                {empty, _} ->
-                    pg2:join(?MODULE, Pid),
-                    {noreply, State}
-             end
-    end;        
+            send_request(RequestQueue, Pid, State)
+    end; 
 handle_cast(_Msg, State) ->
     lager:error("Can't handle msg: ~p", [_Msg]),
     {noreply, State}.
@@ -173,3 +173,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+send_request([FirstReq | OtherReq], Pid, State) ->
+    {From, Headers, Body} = FirstReq,
+    gen_server:cast(Pid, {request, {From, Headers, Body}}), 
+    {noreply, State#state{queue = OtherReq}};
+send_request([], Pid, State) ->
+    pg2:join(?MODULE, Pid),
+    {noreply, State}.
