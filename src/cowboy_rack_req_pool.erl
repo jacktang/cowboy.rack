@@ -126,7 +126,15 @@ handle_cast(standby, #state{queue = RequestQueue} = State) ->
             {noreply, State};
         Pid ->
             pg2:leave(?MODULE, Pid),
-            send_request(RequestQueue, Pid, State)
+            case length(RequestQueue) of
+                0 ->
+                    pg2:join(?MODULE, Pid),
+                    {noreply, State};
+                _ ->
+                    [FirstReq | OtherReq] = RequestQueue,
+                    gen_server:cast(Pid, {request, FirstReq}), 
+                    {noreply, State#state{queue = OtherReq}}
+            end
     end; 
 handle_cast(_Msg, State) ->
     lager:error("Can't handle msg: ~p", [_Msg]),
