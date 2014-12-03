@@ -173,7 +173,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
 send_request([FirstReq | OtherReq], Pid, State) ->
     {From, Headers, Body} = FirstReq,
     gen_server:cast(Pid, {request, {From, Headers, Body}}), 

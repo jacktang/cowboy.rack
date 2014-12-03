@@ -31,11 +31,13 @@ info({reply, Response}, Req, State) ->
     {stop, Req2, State};
 info(_Msg, Req, State) ->
     {ok, Req, State, hibernate}.
+
 terminate(timeout, _Req, _State) ->
   gen_server:cast(cowboy_rack_req_pool, {delete_request, self()}),
   ok; 
 terminate(_Reason, _Req, _State) ->
   ok.
+  
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
