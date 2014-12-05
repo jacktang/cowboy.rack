@@ -39,19 +39,14 @@ info({reply, Response}, Req, State) ->
                   Req2 = cowboy_req:reply(Status, Headers, Body, Req),
                   {stop, Req2, State};
               Num ->
-                Headers2 = lists:delete({Key, Val}, Headers),
-                ValB = list_to_binary(string:sub_string(ValS, 1, Num-1)),
-                ValB2 = list_to_binary(string:sub_string(ValS, Num+1)),
-                Headers3 = lists:append(Headers2, [{Key, ValB}, {Key, ValB2}]),
-                Req2 = cowboy_req:reply(Status, Headers3, Body, Req),
-                {stop, Req2, State}
+                  Headers2 = lists:delete({Key, Val}, Headers),
+                  ValB = list_to_binary(string:sub_string(ValS, 1, Num-1)),
+                  ValB2 = list_to_binary(string:sub_string(ValS, Num+1)),
+                  Headers3 = lists:append(Headers2, [{Key, ValB}, {Key, ValB2}]),
+                  Req2 = cowboy_req:reply(Status, Headers3, Body, Req),
+                  {stop, Req2, State}
             end
-            
         end;
-
-
-
-
 info(_Msg, Req, State) ->
     {ok, Req, State, hibernate}.
 
