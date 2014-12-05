@@ -26,9 +26,32 @@ init(Req, Opt) ->
     {cowboy_loop, Req, Opt, TimeOut, hibernate}.
 
 info({reply, Response}, Req, State) ->
+   
     {Status, Headers, Body} = Response,
-    Req2 = cowboy_req:reply(Status, Headers, Body, Req),
-    {stop, Req2, State};
+    case tuple_list_utils:keyfind(<<"Set-Cookie">>, Headers) of
+        {_, undefined} ->
+            Req2 = cowboy_req:reply(Status, Headers, Body, Req),
+            {stop, Req2, State};
+        {Key, Val} ->
+            ValS = binary_to_list(Val),
+            case  string:str(ValS, "\n") of
+              0 ->
+                  Req2 = cowboy_req:reply(Status, Headers, Body, Req),
+                  {stop, Req2, State};
+              Num ->
+                Headers2 = lists:delete({Key, Val}, Headers),
+                ValB = list_to_binary(string:sub_string(ValS, 1, Num-1)),
+                ValB2 = list_to_binary(string:sub_string(ValS, Num+1)),
+                Headers3 = lists:append(Headers2, [{Key, ValB}, {Key, ValB2}]),
+                Req2 = cowboy_req:reply(Status, Headers3, Body, Req),
+                {stop, Req2, State}
+            end
+            
+        end;
+
+
+
+
 info(_Msg, Req, State) ->
     {ok, Req, State, hibernate}.
 
@@ -37,13 +60,13 @@ terminate(timeout, _Req, _State) ->
   ok; 
 terminate(_Reason, _Req, _State) ->
   ok.
-  
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 handle(Req) ->
     RequestMethod = cowboy_req:method(Req),
     ScriptName = cowboy_req:path(Req),
+    % Coikie = cowboy_req:parse_cookies(Req),
     % _PathInfo = cowboy_req:path_info(Req),
     QueryString = cowboy_req:qs(Req),
     ServerName = cowboy_req:host(Req),
@@ -56,13 +79,14 @@ handle(Req) ->
     Headers = [
                    {<<"REQUEST_METHOD">>, RequestMethod},
                    {<<"SCRIPT_NAME">>, <<"">>}, 
+                   % {<<"COOKIE">>, Coikie},
                    {<<"PATH_INFO">>, ScriptName}, 
                    {<<"QUERY_STRING">>, QueryString},
                    {<<"SERVER_NAME">>, ServerName}, 
                    {<<"SERVER_PORT">>, list_to_binary(integer_to_list(ServerPort))},
                    {<<"HTTP_HOST">>, <<ServerName/binary, ":", (list_to_binary(integer_to_list(ServerPort)))/binary>>}
                   ] ++ translate_headers(RequestHeaders),
-    % io:format("~n================~nREQUEST:~n==================Session:~n~p~nBody:~n~p~n~n~n~n~n", [Headers, Body]),
+    io:format("~n================~nREQUEST:~n==================Session:~n~p~nBody:~n~p~n~n~n~n~n", [Headers, Body]),
     gen_server:cast(cowboy_rack_req_pool, {request, self(), Headers, Body}).            
 
 translate_headers(Headers) ->
