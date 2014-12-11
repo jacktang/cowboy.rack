@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,30 +24,19 @@
 -define(SERVER, ?MODULE).
 -define(APP, cowboy_rack). 
 
--record(state, {worker_pool_num, queue}).
+-record(state, {queue, increase_ratio, worker_pool_num, worker_pool_num_max}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-
-%%--------------------------------------------------------------------
-% start() ->
-%     case supervisor:start_child(cowboy_rack_req_pool_sup, []) of
-%         {ok, Pid}           -> {ok, Pid};
-%         {ok, Pid, _Info}    -> {ok, Pid};
-%         {error, {already_started, Pid}} -> {ok, Pid};
-%         {error, Reason}     -> {error, Reason}
-%     end.
-
-%%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(WorkerPoolNum) ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [WorkerPoolNum], []).
+start_link(WorkerPoolNum, IncreaseRatio, WorkerPoolNumMax) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [WorkerPoolNum, IncreaseRatio, WorkerPoolNumMax], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -64,9 +53,10 @@ start_link(WorkerPoolNum) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([WorkerPoolNum]) ->
+init([WorkerPoolNum, IncreaseRatio, WorkerPoolNumMax]) ->
     gen_server:cast(self(), {spawn, WorkerPoolNum}),
-  {ok, #state{queue = [], worker_pool_num = WorkerPoolNum}}.
+    {ok, #state{queue = [], worker_pool_num = WorkerPoolNum, 
+                increase_ratio = IncreaseRatio, worker_pool_num_max = WorkerPoolNumMax}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -108,8 +98,10 @@ handle_cast({spawn, WorkerPoolNum}, State) ->
                     end
                    end, lists:seq(1, WorkerPoolNum)
                  ),
+    lager:info("finash pg2 create"),
     {noreply, State};
 handle_cast({delete_request, Pid}, #state{queue = RequestQueue} = State) ->
+    lager:info("delete request"),
     case tuple_list_utils:keyfind(Pid, RequestQueue) of
         {Pid, undefined} ->
             {noreply, State};
@@ -118,24 +110,45 @@ handle_cast({delete_request, Pid}, #state{queue = RequestQueue} = State) ->
             {noreply, State#state{queue = RequestQueue2}}
     end;
 handle_cast({request, From, Headers, Body}, #state{queue = RequestQueue} = State) ->
+    lager:info("start a request"),    
     gen_server:cast(self(), standby),
     {noreply, State#state{queue = lists:append(RequestQueue, [{From, Headers, Body}])}};
-handle_cast(standby, #state{queue = RequestQueue} = State) ->
+handle_cast(standby, #state{queue = RequestQueue, increase_ratio = IncreaseRatio, worker_pool_num = WorkerPoolNum, worker_pool_num_max = WorkerPoolNumMax} = State) ->
     case pg2:get_closest_pid(?MODULE) of
         {error, _} ->
-            {noreply, State};
+            case WorkerPoolNum of
+                WorkerPoolNumMax ->   
+                    {noreply, State};
+                _    ->
+                    SpawnNum = lists:min([IncreaseNum, WorkerPoolNumMax - WorkerPoolNum]),
+                    gen_server:cast(self(), {spawn_more, SpawnNum}),
+                    {noreply, State#state{worker_pool_num = WorkerPoolNum + SpawnNum}};
+            end;
         Pid ->
             pg2:leave(?MODULE, Pid),
-            case length(RequestQueue) of
-                0 ->
-                    pg2:join(?MODULE, Pid),
-                    {noreply, State};
+            case RequestQueue of
+                [FirstReq | OtherReq] ->
+                    {From, Headers, Body} = FirstReq,
+                    lager:info("handle the request from ~p", [{pid, From}]),
+                    gen_server:cast(Pid, {request, {From, Headers, Body}}), 
+                    {noreply, State#state{queue = OtherReq}};
                 _ ->
-                    [FirstReq | OtherReq] = RequestQueue,
-                    gen_server:cast(Pid, {request, FirstReq}), 
-                    {noreply, State#state{queue = OtherReq}}
+                    pg2:join(?MODULE, Pid),
+                    {noreply, State}
             end
     end; 
+handle_cast({spawn_more, Num}, State) ->
+    lists:foreach(fun(_N) ->
+                    case cowboy_rack_worker:start() of
+                        {ok, Pid} ->
+                            pg2:join(?MODULE, Pid);
+                        _ ->
+                            lager:error("cowboy_rack_worker spawn process error"),
+                            faild
+                    end
+                   end, lists:seq(1, Num)
+                 ),
+    {noreply, State};
 handle_cast(_Msg, State) ->
     lager:error("Can't handle msg: ~p", [_Msg]),
     {noreply, State}.
@@ -181,9 +194,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-send_request([FirstReq | OtherReq], Pid, State) ->
-    gen_server:cast(Pid, {request, FirstReq}), 
-    {noreply, State#state{queue = OtherReq}};
-send_request([], Pid, State) ->
-    pg2:join(?MODULE, Pid),
-    {noreply, State}.

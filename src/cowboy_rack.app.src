@@ -10,6 +10,9 @@
   {env, [ {rack_env,   []},
           {rails_path, "/home/dev/Work/ninja"},
           {ru_file,    "lobster.rb"},
-          {worker_pool_num, 3},
-          {req_timeout, 6000}  ]}
+          {req_timeout, 6000},
+           {worker_pool_num_init, 1},
+          {worker_pool_num_max, 100},
+          {increase_ratio, 1.5}
+            ]}
  ]}.
