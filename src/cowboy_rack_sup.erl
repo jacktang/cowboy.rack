@@ -66,15 +66,3 @@ init([cowboy_rack_worker_sup, RackEnv, RailsPath]) ->
 init([cowboy_rack_req_pool_sup, WorkerPoolNumInit, IncreaseRatio, WorkerPoolNumMax]) ->
     ReqPool = application_utils:child_spec(cowboy_rack_req_pool, [WorkerPoolNumInit, IncreaseRatio, WorkerPoolNumMax]),
     application_utils:one4one_supervisor(ReqPool).
-
-    % init(_Args) ->
-%     RestartStrategy = one_for_one,
-%     MaxRestarts = 1000,
-%     MaxSecondsBetweenRestarts = 3600,
-
-%     SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-%     {ok, {SupFlags, []}}.
-
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
