@@ -34,6 +34,24 @@
 %% @end
 %%--------------------------------------------------------------------
 start(_StartType, _StartArgs) ->
+	ok = application:ensure_started(crypto),
+	ok = application:ensure_started(asn1),
+    ok = application:ensure_started(public_key),
+    ok = application:ensure_started(ssl),
+    ok = application:ensure_started(ranch),
+    ok = application:ensure_started(cowlib),
+    ok = application:ensure_started(cowboy),
+    % ok = application:ensure_started(cowboy_rack),
+    % cowboy_rack:start(),"wechat2.lktz.net"
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {'_', cowboy_rack_handler, [{path, "/home/dev/Work/ninja"}]}
+                ]}
+                                     ]),
+    {ok, _} = cowboy:start_http(http, 100, [{port, 9900}],
+                                [{env, [{dispatch, Dispatch}]}
+                                ]),  
+
     case cowboy_rack_sup:start_link() of
         {ok, Pid} ->
             {ok, Pid};

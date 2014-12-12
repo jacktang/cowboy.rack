@@ -122,7 +122,7 @@ handle_cast(standby, #state{queue = RequestQueue, increase_ratio = IncreaseRatio
                 _    ->
                     SpawnNum = lists:min([IncreaseNum, WorkerPoolNumMax - WorkerPoolNum]),
                     gen_server:cast(self(), {spawn_more, SpawnNum}),
-                    {noreply, State#state{worker_pool_num = WorkerPoolNum + SpawnNum}};
+                    {noreply, State#state{worker_pool_num = WorkerPoolNum + SpawnNum}},
             end;
         Pid ->
             pg2:leave(?MODULE, Pid),
