@@ -7,12 +7,12 @@
                    stdlib
                  ]},
   {mod, { cowboy_rack_app, []}},
-  {env, [ {rack_env,   []},
-          {rails_path, "/home/dev/Work/ninja"},
+  {env, [ {rack_env,  [{"RACK_ENV", "production"}]},
+          {rails_path, "/sr"},
           {ru_file,    "lobster.rb"},
           {req_timeout, 6000},
            {worker_pool_num_init, 1},
-          {worker_pool_num_max, 100},
-          {increase_ratio, 1.5}
+          {worker_pool_num_max, 1},
+          {increase_ratio, 0}
             ]}
  ]}.

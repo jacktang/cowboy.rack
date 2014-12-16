@@ -116,14 +116,15 @@ handle_cast({request, From, Headers, Body}, #state{queue = RequestQueue} = State
 handle_cast(standby, #state{queue = RequestQueue, increase_ratio = IncreaseRatio, worker_pool_num = WorkerPoolNum, worker_pool_num_max = WorkerPoolNumMax} = State) ->
     case pg2:get_closest_pid(?MODULE) of
         {error, _} ->
-            case WorkerPoolNum of
-                WorkerPoolNumMax ->   
+            % case WorkerPoolNum of
+            %     WorkerPoolNumMax ->   
                     {noreply, State};
-                _    ->
-                    SpawnNum = lists:min([IncreaseNum, WorkerPoolNumMax - WorkerPoolNum]),
-                    gen_server:cast(self(), {spawn_more, SpawnNum}),
-                    {noreply, State#state{worker_pool_num = WorkerPoolNum + SpawnNum}},
-            end;
+            %     _    ->
+            %         IncreaseNum = round(WorkerPoolNum * IncreaseNum),
+            %         SpawnNum = lists:min([IncreaseNum, WorkerPoolNumMax - WorkerPoolNum]),
+            %         gen_server:cast(self(), {spawn_more, SpawnNum}),
+            %         {noreply, State#state{worker_pool_num = WorkerPoolNum + SpawnNum}}
+            % end;
         Pid ->
             pg2:leave(?MODULE, Pid),
             case RequestQueue of
