@@ -19,15 +19,11 @@ def read_request
   env = {}
   
   size = INPUT.read(4)
-  
   if !size || size.size != 4
     exit(0)
   end
-  
   size = size.unpack("N")[0]
-  
   count = INPUT.read(4).unpack("N")[0]
-
   count.times do
     len = INPUT.read(4).unpack("N")[0]
     key = INPUT.read(len)
@@ -35,24 +31,27 @@ def read_request
     value = INPUT.read(len)
     env[key] = value
   end
-
   body_len = INPUT.read(4).unpack("N")[0]
-  
   rack_input = StringIO.new(INPUT.read(body_len))
   rack_input.set_encoding(Encoding::BINARY) if rack_input.respond_to?(:set_encoding)
-
   env.update({"rack.version" => Rack::VERSION,
                "rack.input" => rack_input,
                "rack.errors" => $stderr,
-
                "rack.multithread" => false,
                "rack.multiprocess" => false,
                "rack.run_once" => false,
-
+               "HTTP_HOST" => env["HTTP_X_FORWARDED-HOST"],
                "rack.url_scheme" => ["yes", "on", "1"].include?(ENV["HTTPS"]) ? "https" : "http"
              })
+  if env["HTTP_CONTENT_TYPE"] && env["HTTP_CONTENT_LENGTH"]
+      env.update({
+                 "CONTENT_TYPE" => env["HTTP_CONTENT_TYPE"],
+                 "CONTENT_LENGTH" => env["HTTP_CONTENT_LENGTH"]
 
-  $stderr.puts env.inspect
+        })
+      env.delete("HTTP_CONTENT_LENGTH")
+      env.delete("HTTP_CONTENT_TYPE")
+  end
   env
 end
 
@@ -60,7 +59,6 @@ def handle_request(app, env)
 
   status, headers, body = app.call(env)
 
-  $stderr.puts status.inspect, headers.inspect, body.inspect
   
   packed_body = if body.respond_to?(:to_path) # file
     [1, body.to_path.bytesize, body.to_path].pack("CNa*")
@@ -101,16 +99,13 @@ app, last_mtime = load_app
 
 loop do
   env = read_request
-  
   if !app || !last_mtime
     ENV["RAILS_RELATIVE_URL_ROOT"] = env["SCRIPT_NAME"]
     app, last_mtime = load_app
-    $stderr.puts "Loading app #{app.object_id}\r"
   end
   
   if !app || !last_mtime || File.mtime("config.ru") > last_mtime
     app, last_mtime = load_app
-    $stderr.puts "Reload app to #{app.object_id}\r"
   end
   handle_request(app, env)
 end
